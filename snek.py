@@ -31,6 +31,11 @@ class Token:
 
 
 @dataclass
+class EQToken(Token):
+    pass
+
+
+@dataclass
 class CommandToken(Token):
     pass
 
@@ -159,6 +164,8 @@ class SnekProgram:
         def make_token(token):
             if not token or token[0] == "#":
                 return NoneToken(token)
+            if token == SNEKConst.EQ_OPERATOR:
+                return EQToken(token)
             if token in self.api:
                 return CommandToken(token)
             if token.isdigit():
@@ -208,9 +215,14 @@ class SnekProgram:
                 case [SetToken(), VarnameToken() as var_name]:
                     if max(self.conditions):
                         self._set(str(var_name))
-                case [SetToken(), VarnameToken() as var_name, ArgToken() as value]:
+                case [SetToken(), VarnameToken() as var_name, ArgToken() as value] | [
+                    VarnameToken() as var_name,
+                    EQToken(),
+                    ArgToken() as value,
+                ]:
                     if commands_running:
                         self._set(str(var_name), value.convert())
+
                 # if endif, switch, while, etc
                 case [KwdToken() as kwd, ArgToken() as arg]:
                     if kwd == "ENDIF" or commands_running:

@@ -1,0 +1,23 @@
+ # set variable x to 0
+SET  x  0
+print  x
+
+# set variable y to 0
+SET  y  1
+print  *y =*  y
+
+# this will wait 1 second
+wait  1
+
+print  x
+break
+
+SWITCH  x
+  CASE  0
+    print  *HELLO THERE!*
+  ENDCASE
+
+  CASE  1
+    print  *How did we get here?*
+  ENDCASE
+ENDSWITCH

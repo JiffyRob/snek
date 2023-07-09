@@ -1,23 +1,26 @@
  # set variable x to 0
-SET  x  0
-print  x
+SET(x  0)
+print(x)
 
 # set variable y to 0
-SET  y  1
-print  *y =*  y
+SET(y  1)
+# this is the same as 'print  *y =* y'
+print(*y =*  y)
 
 # this will wait 1 second
-wait  1
+wait(1)
 
-print  x
-break
+print(*Before the BREAK*)
+BREAK
 
-SWITCH  x
-  CASE  0
-    print  *HELLO THERE!*
+
+# Time to do some cursed things with parenthesis
+SWITCH(x)
+  CASE)0(
+    print(*HELLO THERE!*
   ENDCASE
 
-  CASE  1
+  CASE)1
     print  *How did we get here?*
   ENDCASE
 ENDSWITCH

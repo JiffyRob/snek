@@ -2,20 +2,21 @@ import functools
 import operator
 import time
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any
 
 
-class Argtype(Enum):
+class Argtype:
     INT = 0
     STR = 1
     DATA = 2
 
 
-class SNEKConst(Enum):
+class SNEKConst:
     UNFINISHED = "const UNFINISHED"
     NULL = "const NULL"
     END = "const END"
+    SET_COMMAND = "SET"
+    EQ_OPERATOR = "="
 
 
 @dataclass
@@ -114,7 +115,6 @@ class SnekProgram:
             ),
             "print": self.print,
             "wait": Wait,
-            "break": unfinished_run,
         }
         if api is not None:
             self.api.update(api)
@@ -125,8 +125,8 @@ class SnekProgram:
             "ENDSWITCH": self._endswitch,
             "CASE": self._case,
             "ENDCASE": self._endcase,
+            "BREAK": unfinished_run,
         }
-        self.set_command = "SET"
         # dict of variables
         self.namespace = {}
         if start_variables is not None:
@@ -140,7 +140,9 @@ class SnekProgram:
         # name to set next command to
         self.set_name = None
         # set the script
-        self.script = [i.strip() for i in script.split("\n")]
+        self.script = [
+            i.strip() for i in script.replace("(", "  ").replace(")", "  ").split("\n")
+        ]
         # coroutine setup
         self.line_number = 0
         self.command_running = None
@@ -171,7 +173,7 @@ class SnekProgram:
                 return EndToken(token)
             if token in self.kwd:
                 return KwdToken(token)
-            if token == self.set_command:
+            if token == SNEKConst.SET_COMMAND:
                 return SetToken(token)
             if token.isidentifier:
                 return VarnameToken(token)
@@ -191,8 +193,8 @@ class SnekProgram:
             ]
             commands_running = min(self.conditions) and min(self.cases)
             match tokens:
-                # empty
-                case [] | [CommentToken()]:
+                # empty, or begins with comment
+                case [] | [CommentToken(), *_]:
                     pass
                 # command
                 case [CommandToken() as com, *args]:

@@ -193,7 +193,7 @@ class SnekProgram:
         while self.command_running is None and self.line_number < len(self.script):
             line = self.script[self.line_number]
             tokens = [
-                make_token(token) for token in self.script[self.line_number].split("  ")
+                make_token(token) for token in line.split("  ")
             ]
             tokens = [i for i in tokens if not isinstance(i, NoneToken)]
             commands_running = min(self.conditions) and min(self.cases)

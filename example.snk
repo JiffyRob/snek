@@ -10,7 +10,7 @@ print(*y =*  y)
 # this will wait 1 second
 wait(1)
 
-print(*Before the BREAK*)
+print(*Before the BREAK*)  # comments work on the sides too
 BREAK
 
 

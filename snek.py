@@ -36,17 +36,12 @@ class CommandToken(Token):
 
 
 @dataclass
-class CommentToken(Token):
+class NoneToken(Token):
     pass
 
 
 @dataclass
 class ArgToken(Token):
-    pass
-
-
-@dataclass
-class EndToken(Token):
     pass
 
 
@@ -140,9 +135,13 @@ class SnekProgram:
         # name to set next command to
         self.set_name = None
         # set the script
-        self.script = [
-            i.strip() for i in script.replace("(", "  ").replace(")", "  ").split("\n")
-        ]
+        self.script = []
+        script = script.replace("(", "  ")
+        script = script.replace(")", "  ")
+        for line in script.split("\n"):
+            line = line.strip()
+            line = line.split("#")[0]
+            self.script.append(line)
         # coroutine setup
         self.line_number = 0
         self.command_running = None
@@ -159,7 +158,7 @@ class SnekProgram:
     def cycle(self):
         def make_token(token):
             if not token or token[0] == "#":
-                return CommentToken(token)
+                return NoneToken(token)
             if token in self.api:
                 return CommandToken(token)
             if token.isdigit():
@@ -169,15 +168,13 @@ class SnekProgram:
                 return ArgToken(token[1:-1])
             if token in self.namespace:
                 return ArgToken(self.namespace[token])
-            if token == SNEKConst.END:
-                return EndToken(token)
             if token in self.kwd:
                 return KwdToken(token)
             if token == SNEKConst.SET_COMMAND:
                 return SetToken(token)
-            if token.isidentifier:
+            if token.isidentifier():
                 return VarnameToken(token)
-            self.error(f"Unable to parse token {token}")
+            self.error(f"Unable to parse token '{token}'")
 
         if self.command_running is not None:
             value = next(self.command_running)
@@ -191,10 +188,11 @@ class SnekProgram:
             tokens = [
                 make_token(token) for token in self.script[self.line_number].split("  ")
             ]
+            tokens = [i for i in tokens if not isinstance(i, NoneToken)]
             commands_running = min(self.conditions) and min(self.cases)
             match tokens:
-                # empty, or begins with comment
-                case [] | [CommentToken(), *_]:
+                # empty
+                case []:
                     pass
                 # command
                 case [CommandToken() as com, *args]:
@@ -226,8 +224,6 @@ class SnekProgram:
                 # here on are common errors
                 case [CommandToken(), *_]:
                     self.error("Unexpected newline.  Perhaps you forgot 'END'?")
-                case [EndToken()]:
-                    self.error("Unexpected end token.  Perhaps you mistyped a command?")
                 case [KwdToken(), VarnameToken() as var_name] | [
                     CommandToken(),
                     VarnameToken() as var_name,
@@ -236,7 +232,7 @@ class SnekProgram:
                         f"Unrecognized token '{var_name}'.  Perhaps you forgot to mark it as a string?"
                     )
                 case [VarnameToken() as var_name, *_] | [ArgToken() as var_name]:
-                    self.error(f"Unrecognized command {var_name}.")
+                    self.error(f"Unrecognized command '{var_name}'.")
                 # wow you really messed up
                 case _:
                     self.error(

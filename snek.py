@@ -53,6 +53,14 @@ def neq(*args):
     return False
 
 
+def can_be_float(string):
+    try:
+        float(string)
+        return True
+    except ValueError:
+        return False
+
+
 class SNEKProgram:
     def __init__(self, script, start_variables=None, api=None):
         self.api = {
@@ -171,6 +179,8 @@ class SNEKProgram:
             return True
         if value.isdigit():
             return True
+        if can_be_float(value):
+            return True
         if value[0] == value[-1] and value[0] in self.lexer.quotes:
             return True
         if value in self.namespace:
@@ -184,6 +194,8 @@ class SNEKProgram:
             return self.namespace[value]
         if value.isdigit():
             return int(value)
+        if can_be_float(value):
+            return float(value)
         if value[0] == value[-1] and value[0] in self.lexer.quotes:
             return value[1:-1].format(**self.namespace)
         self.error(f"Unable to parse argument '{value}'")

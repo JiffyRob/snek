@@ -1,0 +1,20 @@
+a = 2;
+print(a);  # prints a
+wait(1000);
+switch a {
+    case 2 {
+        print("a is 2!");
+    }
+
+    case 3 {
+        print("a is 3!");
+    }
+}
+# No algebra.  If you want to do fancy math you have to string commands like this
+b = add(2, 3);
+b = mult(b, 3);
+
+print(b);
+if b {
+    print("B is {b}");
+}

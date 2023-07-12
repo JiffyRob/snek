@@ -99,12 +99,6 @@ class SNEKProgram:
         }
         if api is not None:
             self.api.update(api)
-        self.kwd = {
-            "if": self._if,
-            "switch": self._switch,
-            "case": self._case,
-            "}": self._end,
-        }
         # variables go here
         self.namespace = {}
         if start_variables is not None:
@@ -114,7 +108,12 @@ class SNEKProgram:
         # interpreter state and control flow
         self.running = True
         self.current_command = None
+        # list of tuples containing control state (eg, [('switch', 'b')]
         self.control_statements = []
+        # list of lists of tokens in while loops.
+        # shlex doesn't support jumping lines, so we cache and push the whole loop in manually
+        self.loop_cache = []
+        self.running_stack = False
         self.set_name = None
 
     def error(self, prompt):
@@ -123,18 +122,39 @@ class SNEKProgram:
         )
 
     def _if(self, arg):
-        self.control_statements.append(bool(arg))
+        self.control_statements.append(("if", bool(arg), self.lexer.lineno))
 
     def _switch(self, arg):
-        self.control_statements.append(arg)
+        self.control_statements.append(("switch", arg, self.lexer.lineno))
 
     def _case(self, arg):
         self.control_statements.append(
-            arg == self.eval_arg(self.control_statements[-1])
+            (
+                "case",
+                arg == self.eval_arg(self.control_statements[-1][1]),
+                self.lexer.lineno,
+            )
         )
 
+    def _while(self, arg):
+        self.control_statements.append(("while", arg, self.lexer.lineno))
+        self.loop_cache.append([])
+
     def _end(self):
-        self.control_statements.pop()
+        kwd, expr, line = self.control_statements.pop()
+        if kwd == "while":
+            loop_tokens = self.loop_cache.pop()
+            if self.eval_arg(expr):
+                self.control_statements.append((kwd, expr, line))
+                self.loop_cache.append([])
+                self.running_stack = True
+                for loop_token in reversed(loop_tokens):
+                    self.lexer.push_token(loop_token)
+                self.lexer.lineno = line
+            elif self.loop_cache:
+                self.loop_cache[-1].extend(loop_tokens)
+            else:
+                self.running_stack = False
 
     def _set(self, name, value):
         if value == NEXT:
@@ -154,7 +174,7 @@ class SNEKProgram:
         if not self.control_statements:
             return True
         for statement in self.control_statements:
-            if not statement:
+            if statement[0] in {"if", "case"} and not statement[1]:
                 return False
         return True
 
@@ -171,7 +191,8 @@ class SNEKProgram:
             if current_token == "}" and token_list:
                 self.error("Unexpected closing bracket while parsing")
             token_list.append(current_token)
-
+        if self.loop_cache:
+            self.loop_cache[-1].extend(token_list)
         return token_list
 
     def is_arg(self, value):
@@ -257,6 +278,8 @@ class SNEKProgram:
                     self._switch(arg)
                 case ["case", arg, "{"]:
                     self._case(self.eval_arg(arg))
+                case ["while", arg, "{"]:
+                    self._while(arg)
                 case ["}"]:
                     self._end()
                 # variable assignment
@@ -267,3 +290,11 @@ class SNEKProgram:
                 # errors
                 case _:
                     self.error(f"Unable to parse line {statement}")
+            if self.running_stack:
+                self.lexer.lineno += 1
+
+
+if __name__ == "__main__":
+    with open("test.snk") as file:
+        script = file.read()
+    SNEKProgram(script).run()

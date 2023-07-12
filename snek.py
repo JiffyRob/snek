@@ -113,6 +113,8 @@ class SNEKProgram:
         # list of lists of tokens in while loops.
         # shlex doesn't support jumping lines, so we cache and push the whole loop in manually
         self.loop_cache = []
+        # when repeating a loop the lexer doesn't parse the newlines twice
+        # increment line number manually when this is set to True
         self.running_stack = False
         self.set_name = None
 

@@ -23,22 +23,24 @@ c = 0.5;
 print(c);
 
 counter = 10;
-while counter {
-    counter = sub(counter, 1);
-    counter2 = 3;
-    while counter2 {
-        counter2 = sub(counter2, 1);
-        switch counter2 {
-            case 0 {
-                print("All gone");
-            }
-            case 1 {
-                print("Just me");
-            }
-            case 2 {
-                print("Here's to a couple!");
+if 0 {
+    while counter {
+        counter = sub(counter, 1);
+        counter2 = 3;
+        while counter2 {
+            counter2 = sub(counter2, 1);
+            switch counter2 {
+                case 0 {
+                    print("All gone");
+                }
+                case 1 {
+                    print("Just me");
+                }
+                case 2 {
+                    print("Here's to a couple!");
+                }
             }
         }
+        print(counter);
     }
-    print(counter);
 }

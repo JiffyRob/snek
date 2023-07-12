@@ -123,20 +123,35 @@ class SNEKProgram:
             f"{self.lexer.error_leader('main')}{prompt}",
         )
 
+    def _skip(self):
+        brace_count = 1
+        while brace_count:
+            token = self.lexer.get_token()
+            if token == "{":
+                brace_count += 1
+            if token == "}":
+                brace_count -= 1
+
     def _if(self, arg):
-        self.control_statements.append(("if", bool(arg), self.lexer.lineno))
+        if arg:
+            self.control_statements.append(("if", True, self.lexer.lineno))
+        else:
+            self._skip()
 
     def _switch(self, arg):
         self.control_statements.append(("switch", arg, self.lexer.lineno))
 
     def _case(self, arg):
-        self.control_statements.append(
-            (
-                "case",
-                arg == self.eval_arg(self.control_statements[-1][1]),
-                self.lexer.lineno,
+        if arg == self.eval_arg(self.control_statements[-1][1]):
+            self.control_statements.append(
+                (
+                    "case",
+                    True,
+                    self.lexer.lineno,
+                )
             )
-        )
+        else:
+            self._skip()
 
     def _while(self, arg):
         self.control_statements.append(("while", arg, self.lexer.lineno))

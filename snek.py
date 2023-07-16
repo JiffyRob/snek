@@ -32,6 +32,26 @@ class Wait(SnekCommand):
         return UNFINISHED
 
 
+class Any:
+    def __eq__(self, other):
+        return True
+
+    def __lt__(self, other):
+        return False
+
+    def __gt__(self, other):
+        return False
+
+    def __le__(self, other):
+        return True
+
+    def __ge__(self, other):
+        return False
+
+    def __repr__(self):
+        return f"SNEK const ANY"
+
+
 def snek_command(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -100,7 +120,9 @@ class SNEKProgram:
         if api is not None:
             self.api.update(api)
         # variables go here
-        self.namespace = {}
+        self.namespace = {
+            "ANY": Any(),
+        }
         if start_variables is not None:
             self.namespace.update(start_variables)
         # actual lexing

@@ -1,68 +1,65 @@
 # SNEK
 #### Super NPC/Event Koordinator
 
-SNEK is a very simple scripting language that you can use to control cutscenes or anything that you want really in your games.  It implements all functions  as coroutines and can use this to execute functions over multiple frames.  
+SNEK is a very simple scripting language that you can use to control cutscenes or anything that you want really in your games.  The entire language is set up to run as a coroutine, so that one command can take as lont as it wants.
 
 You can use your own single frame frunctions via the @snek_command decorator, which will convert to a coroutine for you.  You can also create your own multiple frame callbacks by sublcassing the SnekCommand class and implementing a `get_value()` method.
 
 ## Syntax
 The language is centered around being as powerful as possible while still being simple and easy to parse.
-Every program is divided into lines, which in turn are divided into tokens.  Tokens are seperated by two spaces `"  "` or a parenthesis `'(' or ')'`
-Comments are denoted by a `#`, strings by `*` on each side.  There are no multiline comments.
+Comments are denoted by a `#`, strings by `"` or `'` on each side.  There are no multiline comments.
+### basic syntax
+`x = 2;` sets x to 2
+`y = add(2, 3);` sets y to the sum of 2 and 3
+`print("Hello world!");` prints the string "hello world!"
+There are many many other functions that you have access to as well:
+ - `upper(string)` is the equivalent of `string.upper()` in python
+ - `lower(string)` is the equivalent of `string.lower()` in python
+ - `title(string)` is the equivalent of `string.title()` in python
+ - `print(*stuff)` is like python but gives a little debug info
+ - `wait(time)` is the same as `time.sleep(time / 1000)` or `pygame.time.delay(time)`
+ - `randint(start, end)` is the same as `random.randint(start, end)`
+ - `input(prompt)` is special.  It is the one function that blocks even the async part of the code.  It is used for console demos and for halting things for debugging 
+purposes.  It is equivalent to the python `input()` function
+ - `not(arg)` is the same as the `not` operator in python `not(True)` = `False`
+ - `bool` does the same as in python as well
+ - `contains(string, substring)` is the same as `substring in string` in python
+ - `lt, le, eq, neq, ge, gt, abs` all are erquivalent to the `<, <=, ==, !=, >=, >, abs` operators in python, respectively
+ - `add(*stuff)` takes as many args as you give it and adds them all together
+ - `mult(*stuff)` is the same as add, but multiplies
+ - `neg(num)` is the same as the unary `-` in python (`neg(3)` = `-3`)
+ - `pow(a, b)` is the same as `a**b` in python
+ - `sub(a, *b)` subtracts every subsequent number from the first one (`sum(6, 3, 1)` = 6 - 3 - 1 or 2)
+ - `div(a, *b) and fdiv(a, *b)` divides every subsequent number from the first one.  `fdiv` rounds to the lowest whole number.
+ - `inv(a)` is the bitwise not
+ - `lshift(a) and rshift(b)` do bitwise left and right shift
+ - `xor` bitwise exclusive or
+ - `and` bitwise/logical and
+ - `or` bitwise/logical or
 
-Every line is either:
- - A comment or blank line (Comment tokens or no tokens)
- - A command (eg `print(x)`) (Command token followed any amount of arg tokens)
- - A control flow statement (eg `IF y`)  (Keyword token optionally followed by an arg token)
- - A variable setting `SET  x  0` or `x  =  0`  (SET token, var_name token, optional value token ,or SET token, var_name token)
-
-Every token is either:
- - A comment token (#......)
- - A command token (eg `print`)
- - An arg token (eg `4` or `*mystring*`)
- - A keyword token (eg `SWITCH`)
- - A var name token (eg `My_var3`)
-
-Sytax errors try to be good but there are always token patterns that the interpreter will not understand, in which case they are given to you.
-There are currently only two types: ints and strings.  We may need arrays later or floats.
-
-To set a variable to the result of a command you do like this:
+### Control flow statments
+SNEK has three control flow statements, which would act pretty much how you would expect:
+If statement:
 ```
-SET  x
-add(2  3)
-print(x)  # will print 5
-```
-If statements are constructed like this:
-```
-IF x
-print *X is true*  # you can indent this
-ENDIF
-```
-Switch case are a little more complex:
-```
-SWITCH x
-  # indentation is optional here, but can improve readability
-  CASE 0
-    print *x is 0*
-  ENDCASE
-  CASE 1
-    print *x is 1*
-  ENDCASE
-ENDSWITCH
-```
-As of yet there is no default case but you can always set a variable to work around it if you have to.
-
-Commands:
-```
-eq *args returns if all args are equal to e/0
-neq *args is the inverse of eq
-add *args gets the sum of all args
-sub *args subtracts all subsequent args from the first one
-mult *args gets the produt of all args
-div *args is equivalent to args[0] / (product(args[1:])
-print *args prints all args given
-wait millis waits by a given amount of milliseconds.
+# if statement runs its code if bool(x) == True
+if x {
+    print("x evals to true!");
+}
+# if x is 0, print x is 0.  If it is 1, print it
+switch x {
+    case 0 {
+        print("x is 0");
+    }
+    case 1 {
+        print("x is 1");
+    }
+}
 ```
 
-There will be more commands later.  You can always add your own if the set is too small.
-To run a script in async mode you call `SnekProgram.cycle()` every execution frame.  `run()` does this in one go and can eat serious resources.  
+### variable types
+SNEK has three variable types as well.  They are all represented the same way python represents them, but you can only call their methods if you wrap them into commands
+```
+x = 0;  # x is an int
+y = -.6  # y is a float
+z = "Hello, world!"  # z is a string
+```

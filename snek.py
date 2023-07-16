@@ -267,10 +267,10 @@ class SNEKProgram:
             value = next(self.current_command)
             if value != UNFINISHED:
                 self.current_command = None
-            if self.set_name is not None:
-                self._set(self.set_name, value)
-                self._set(self.set_name, value)
-                self.set_name = None
+                if self.set_name is not None:
+                    self._set(self.set_name, value)
+                    self._set(self.set_name, value)
+                    self.set_name = None
         while self.current_command is None and self.running:
             statement = self.get_statement()
             match statement:

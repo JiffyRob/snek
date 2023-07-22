@@ -1,18 +1,20 @@
 import functools
 import operator
 import random
-import shlex
 import time
 
+import pyparsing as pp
+
 UNFINISHED = "const unfinished"
-NEXT = "const next"
+DONE = "const done"
 
-
-class SnekError(SyntaxError):
-    pass
+pp.ParserElement.enable_packrat()
 
 
 class SnekCommand:
+    def __iter__(self):
+        return self
+
     def __next__(self):
         return self.get_value()
 
@@ -73,12 +75,70 @@ def neq(*args):
     return False
 
 
-def can_be_float(string):
-    try:
-        float(string)
-        return True
-    except ValueError:
-        return False
+class Lexer:
+    """Holds all lexing primitives and a function to use them"""
+
+    # argument primitives
+    comment = "#" + pp.rest_of_line
+
+    number = pp.common.number
+    string = pp.QuotedString("'", esc_char="\\") | pp.QuotedString('"', esc_char="\\")
+    varname = pp.common.identifier
+    literal = number | string | varname
+    expression = pp.Forward()
+
+    # commands and keywords
+    command = (
+        varname
+        + "("
+        + pp.Opt(pp.DelimitedList(expression, allow_trailing_delim=True))
+        + ")"
+    )
+    control = pp.one_of("if switch case while count", as_keyword=True)
+
+    # expressions
+    assignment = varname + "="
+    expression <<= pp.Group(
+        pp.infix_notation(
+            pp.Group(command) | literal,
+            [
+                ("-", 1, pp.opAssoc.RIGHT),
+                (pp.one_of("* / //"), 2, pp.OpAssoc.LEFT),
+                (pp.one_of("+ -"), 2, pp.OpAssoc.LEFT),
+                (pp.one_of("> >= < <= == !="), 2, pp.OpAssoc.LEFT),
+            ],
+        )
+    )
+
+    grammar = pp.ZeroOrMore(
+        pp.Group(pp.Literal("}"))
+        | pp.Group(control + pp.Opt(expression) + pp.Literal("{"))
+        | pp.Group(pp.Opt(assignment) + expression + pp.Literal(";").suppress())
+    ).ignore(comment)
+
+    @classmethod
+    def tokenize(cls, string):
+        return cls.grammar.parse_string(string, parse_all=True)
+
+    @classmethod
+    def _test(cls):
+        for test in (
+            "a = 1; \nb = 2;",
+            "a = bool();",
+            "-1 + 3 * -4;",
+            "a = bool() + 1 - 3;",
+            "b(a, 1 + -1);",
+            "bool(a + 45, -5 * (3 + -b) - 6);",
+            "if x==0 {",
+            "if x {",
+            "}",
+            "while 1 {",
+            "_='Hi there!';",
+        ):
+            result = cls.tokenize(test)
+            print(test)
+            print(result)
+            print()
 
 
 class SNEKProgram:
@@ -89,22 +149,12 @@ class SNEKProgram:
             "title": snek_command(lambda arg: arg.title()),
             "print": self.print,
             "wait": Wait,
-            "randint": random.randint,
+            "randint": snek_command(random.randint),
             "input": snek_command(input),
             "not": snek_command(lambda arg: operator.not_(arg)),
-            "bool": snek_command(lambda arg: bool(arg)),
+            "bool": snek_command(lambda *args: bool(*args)),
             "contains": snek_command(lambda seq, sub: operator.contains(seq, sub)),
-            "lt": snek_command(lambda a, b: a < b),
-            "le": snek_command(lambda a, b: a <= b),
-            "eq": snek_command(lambda *args: functools.reduce(operator.ne, args)),
-            "neq": snek_command(neq),
-            "ge": snek_command(lambda a, b: a >= b),
-            "gt": snek_command(lambda a, b: a > b),
             "abs": snek_command(abs),
-            "add": snek_command(lambda *args: sum(args)),
-            "mult": snek_command(lambda *args: functools.reduce(operator.mul, args)),
-            "neg": snek_command(lambda a: -a),
-            "pow": snek_command(lambda a, b: a**b),
             "sub": snek_command(lambda a, *args: a - sum(args)),
             "div": snek_command(lambda *args: functools.reduce(operator.truediv, args)),
             "fdiv": snek_command(
@@ -116,6 +166,8 @@ class SNEKProgram:
             "xor": snek_command(operator.xor),
             "and": snek_command(operator.and_),
             "or": snek_command(operator.or_),
+            "getitem": snek_command(lambda x, y: x[y]),
+            "time": snek_command(time.time() * 1000),
         }
         if api is not None:
             self.api.update(api)
@@ -125,215 +177,224 @@ class SNEKProgram:
         }
         if start_variables is not None:
             self.namespace.update(start_variables)
-        # actual lexing
-        self.lexer = shlex.shlex(script, punctuation_chars="()+-*/=")
-        # interpreter state and control flow
+
+        self.operators = {
+            "+": operator.add,
+            "-": lambda x, y=UNFINISHED: x - y if y != UNFINISHED else -x,
+            "*": operator.mul,
+            "/": operator.truediv,
+            "//": operator.floordiv,
+            ">": operator.gt,
+            ">=": operator.ge,
+            "<": operator.lt,
+            "<=": operator.le,
+            "==": operator.eq,
+            "!=": operator.ne,
+        }
+        self.kwds = {
+            "if": self._if,
+            "switch": self._switch,
+            "case": self._case,
+            "while": self._while,
+            "count": self._count,
+        }
+
+        self.operand_evaluators = {
+            int: lambda x: x,
+            float: lambda x: x,
+            str: lambda x: self.namespace.get(x, x),
+        }
+        self.script = Lexer.tokenize(script)
+        self.index = 0
         self.running = True
-        self.current_command = None
-        # list of tuples containing control state (eg, [('switch', 'b')]
-        self.control_statements = []
-        # list of lists of tokens in while loops.
-        # shlex doesn't support jumping lines, so we cache and push the whole loop in manually
-        self.loop_cache = []
-        # when repeating a loop the lexer doesn't parse the newlines twice
-        # increment line number manually when this is set to True
-        self.running_stack = False
-        self.set_name = None
+        self.call_stack = []
+        self.runner = self._run()
 
-    def error(self, prompt):
-        raise SnekError(
-            f"{self.lexer.error_leader('main')}{prompt}",
-        )
+    def _evaluate_expression(self, expression):
+        # Try to evaluate all subgroups first
+        fixed = []
+        for token in expression:
+            if isinstance(token, pp.ParseResults):
+                evaluator = self._evaluate_expression(token)
+                value = next(evaluator)
+                while value == UNFINISHED:
+                    yield UNFINISHED
+                    value = next(evaluator)
+                token = value
+            if isinstance(token, str) and token in self.namespace:
+                token = self.namespace[token]
+            fixed.append(token)
+        match fixed:
+            # single term
+            case [op]:
+                yield op
+            # function call (always grouped by itself)
+            case [func_name, "(", *args, ")"]:
+                yield from self.api[func_name](*args)
+            # unary operator (also always grouped by itself)
+            case [op, arg]:
+                yield self.operators[op](arg)
+            # binary operator
+            case [arg1, op, arg2]:
+                yield self.operators[op](arg1, arg2)
+            # multiple binary operators strung together
+            # currently we do the leftmost operation and then rrecurse again
+            case [arg1, op, arg2, *rest]:
+                yield from self._evaluate_expression(
+                    [self.operators[op](arg1, arg2), *rest]
+                )
 
-    def _skip(self):
+    def _skip_to_end(self, index):
         brace_count = 1
         while brace_count:
-            token = self.lexer.get_token()
-            if token == "{":
+            line = tuple(self.script[index])
+            if "{" in line:
                 brace_count += 1
-            if token == "}":
+            if "}" in line:
                 brace_count -= 1
+            index += 1
+        return index
 
-    def _if(self, arg):
-        if arg:
-            self.control_statements.append(("if", True, self.lexer.lineno))
+    def _if(self, expression):
+        evaluator = self._evaluate_expression(expression)
+        value = next(evaluator)
+        while value == UNFINISHED:
+            yield UNFINISHED
+            value = next(evaluator)
+        if not value:
+            self.index = self._skip_to_end(self.index + 1) - 1
         else:
-            self._skip()
+            self.call_stack.append(("if", value, None))
+        yield
 
-    def _switch(self, arg):
-        self.control_statements.append(("switch", arg, self.lexer.lineno))
+    def _switch(self, expression):
+        evaluator = self._evaluate_expression(expression)
+        value = next(evaluator)
+        while value == UNFINISHED:
+            yield UNFINISHED
+            value = next(evaluator)
+        self.call_stack.append(["switch", value, False])
+        yield
 
-    def _case(self, arg):
-        if arg == self.eval_arg(self.control_statements[-1][1]):
-            self.control_statements.append(
-                (
-                    "case",
-                    True,
-                    self.lexer.lineno,
-                )
-            )
+    def _case(self, expression):
+        evaluator = self._evaluate_expression(expression)
+        value = next(evaluator)
+        while value == UNFINISHED:
+            yield UNFINISHED
+            value = next(evaluator)
+
+        owner = None
+        for data in reversed(self.call_stack):
+            if data[0] == "switch":
+                owner = data
+                break
+
+        if owner is None:
+            raise ValueError("case statement without switch", self.call_stack)
+
+        owner_value = owner[1]
+        if owner_value != value:
+            self.index = self._skip_to_end(self.index + 1) - 1
         else:
-            self._skip()
+            owner[-1] = True
+            self.call_stack.append(("case", value, None))
+        yield
 
-    def _while(self, arg):
-        self.control_statements.append(("while", arg, self.lexer.lineno))
-        self.loop_cache.append([])
+    def _end_block(self):
+        data = self.call_stack.pop()
+        if data[0] == "while":
+            self.index = data[-1]
 
-    def _end(self):
-        kwd, expr, line = self.control_statements.pop()
-        if kwd == "while":
-            loop_tokens = self.loop_cache.pop()
-            if self.eval_arg(expr):
-                self.control_statements.append((kwd, expr, line))
-                self.loop_cache.append([])
-                self.running_stack = True
-                for loop_token in reversed(loop_tokens):
-                    self.lexer.push_token(loop_token)
-                self.lexer.lineno = line
-            elif self.loop_cache:
-                self.loop_cache[-1].extend(loop_tokens)
-            else:
-                self.running_stack = False
-
-    def _set(self, name, value):
-        if value == NEXT:
-            self.set_name = name
+    def _while(self, expression):
+        evaluator = self._evaluate_expression(expression)
+        value = next(evaluator)
+        while value == UNFINISHED:
+            yield UNFINISHED
+            value = next(evaluator)
+        if value:
+            self.call_stack.append(("while", expression, self.index - 1))
         else:
-            self.namespace[name] = value
+            self.index = self._skip_to_end(self.index + 1) - 1
+        yield
 
-    @snek_command
-    def print(self, *args):
-        print(self.lexer.error_leader("main"), *args)
+    def _count(self):
+        yield
 
-    def run(self):
+    def _run(self):
+        self.index = 0
+        self.running = True
         while self.running:
-            self.cycle()
-
-    def control_running(self):
-        if not self.control_statements:
-            return True
-        for statement in self.control_statements:
-            if statement[0] in {"if", "case"} and not statement[1]:
-                return False
-        return True
-
-    def get_statement(self):
-        token_list = []
-        current_token = None
-        while current_token not in {";", "{", "}"}:
-            current_token = self.lexer.get_token()
-            if current_token is self.lexer.eof:
-                if token_list:
-                    self.error("Unexpected eof while parsing" + repr(token_list))
+            line = self.script[self.index]
+            match line:
+                case [kwd, *args, "{"] if kwd in self.kwds:
+                    evaluator = self.kwds[kwd](*args)
+                    value = next(evaluator)
+                    while value == UNFINISHED:
+                        yield UNFINISHED
+                        value = next(evaluator)
+                case ["}"]:
+                    self._end_block()
+                case [varname, "=", expr]:
+                    evaluator = self._evaluate_expression(expr)
+                    value = next(evaluator)
+                    while value == UNFINISHED:
+                        yield value
+                        value = next(evaluator)
+                    self.namespace[varname] = value
+                case [expr]:
+                    evaluator = self._evaluate_expression(expr)
+                    value = next(evaluator)
+                    while value == UNFINISHED:
+                        yield value
+                        value = next(evaluator)
+            self.index += 1
+            if self.index >= len(self.script):
                 self.running = False
-                return []
-            if current_token == "}" and token_list:
-                self.error("Unexpected closing bracket while parsing")
-            token_list.append(current_token)
-        if self.loop_cache:
-            self.loop_cache[-1].extend(token_list)
-        return token_list
-
-    def is_arg(self, value):
-        if value.isidentifier():
-            return True
-        if value.isdigit():
-            return True
-        if can_be_float(value):
-            return True
-        if value[0] == value[-1] and value[0] in self.lexer.quotes:
-            return True
-        if value in self.namespace:
-            return True
-        return False
-
-    def eval_arg(self, value):
-        if value == "NEXT":
-            return NEXT
-        if value in self.namespace:
-            return self.namespace[value]
-        if value.isdigit():
-            return int(value)
-        if can_be_float(value):
-            return float(value)
-        if value[0] == value[-1] and value[0] in self.lexer.quotes:
-            return value[1:-1].format(**self.namespace)
-        self.error(f"Unable to parse argument '{value}'")
+        yield DONE
 
     def cycle(self):
-        # parsed on the fly
-        # a statement ends with a ;
-        if self.current_command is not None:
-            value = next(self.current_command)
-            if value != UNFINISHED:
-                self.current_command = None
-                if self.set_name is not None:
-                    self._set(self.set_name, value)
-                    self._set(self.set_name, value)
-                    self.set_name = None
-        while self.current_command is None and self.running:
-            statement = self.get_statement()
-            match statement:
-                # empty line, probably eof
-                case []:
-                    pass
-                # execute a command
-                case [command, "(", *args, ")", ";"] if command in self.api:
-                    if self.control_running():
-                        args = [self.eval_arg(arg) for arg in args if arg != ","]
-                        command = self.api[command](*args)
-                        value = next(command)
-                        if value == UNFINISHED:
-                            self.current_command = command
-                            continue
-                        if self.set_name is not None:
-                            self._set(self.set_name, value)
-                            self.set_name = None
-                # command with variable assignment
-                # WHYYY does black do this
-                case [
-                    name,
-                    "=",
-                    command,
-                    "(",
-                    *args,
-                    ")",
-                    ";",
-                ] if command in self.api and name.isidentifier():
-                    if self.control_running():
-                        self.set_name = name
-                        args = [self.eval_arg(arg) for arg in args if arg != ","]
-                        command = self.api[command](*args)
-                        value = next(command)
-                        if value == UNFINISHED:
-                            self.current_command = command
-                            continue
-                        self._set(self.set_name, value)
-                        self.set_name = None
-                # control flow
-                case ["if", arg, "{"]:
-                    self._if(self.eval_arg(arg))
-                case ["switch", arg, "{"]:
-                    self._switch(arg)
-                case ["case", arg, "{"]:
-                    self._case(self.eval_arg(arg))
-                case ["while", arg, "{"]:
-                    self._while(arg)
-                case ["}"]:
-                    self._end()
-                # variable assignment
-                case [name, "=", value, ";"] if name.isidentifier() and self.is_arg(
-                    value
-                ):
-                    self._set(name, self.eval_arg(value))
-                # errors
-                case _:
-                    self.error(f"Unable to parse line {statement}")
-            if self.running_stack:
-                self.lexer.lineno += 1
+        if self.running:
+            value = next(self.runner)
+            if value == DONE:
+                self.running = False
+
+    def run(self, delay=0.05):
+        # just iterate through the whole thing and kill all the async
+        for _ in self.runner:
+            time.sleep(delay)
+
+    def done(self):
+        return not self.running
+
+    @classmethod
+    def _eval_test(cls):
+        instance = cls("a = 0;")
+        for test in (
+            "1 + 1;",
+            "-1 + 3 * -4 // (wait(0) + 1);",
+            "(3 * 3 * 3 * -1);",
+            "(((((0))))) + -5;",
+            "2 >= 1 - 2;",
+            "1 // 8 + 2;",
+        ):
+            print(test)
+            print(
+                "result:",
+                list(instance._evaluate_expression(Lexer.tokenize(test)[0][0])),
+            )
+
+    def print(self, *args):
+        print("SNEK says:", *args)
+        yield 1
 
 
 if __name__ == "__main__":
+    # print("TOKENIZER TEST")
+    # Lexer._test()
+    # print("EVALUATOR TEST")
+    # SNEKProgram._eval_test()
+    print("PROGRAM TEST")
     with open("test.snk") as file:
         script = file.read()
-    SNEKProgram(script).run()
+    program = SNEKProgram(script)
+    program.run()

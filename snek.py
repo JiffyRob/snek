@@ -102,10 +102,10 @@ class Lexer:
         pp.infix_notation(
             pp.Group(command) | literal,
             [
-                ("-", 1, pp.opAssoc.RIGHT),
-                (pp.one_of("* / //"), 2, pp.OpAssoc.LEFT),
-                (pp.one_of("+ -"), 2, pp.OpAssoc.LEFT),
-                (pp.one_of("> >= < <= == !="), 2, pp.OpAssoc.LEFT),
+                (pp.one_of("- !", as_keyword=True), 1, pp.opAssoc.RIGHT),
+                (pp.one_of("* / //", as_keyword=True), 2, pp.OpAssoc.LEFT),
+                (pp.one_of("+ -", as_keyword=True), 2, pp.OpAssoc.LEFT),
+                (pp.one_of("> >= < <= == !=", as_keyword=True), 2, pp.OpAssoc.LEFT),
             ],
         )
     )
@@ -190,6 +190,7 @@ class SNEKProgram:
             "<=": operator.le,
             "==": operator.eq,
             "!=": operator.ne,
+            "!": lambda x: not x,
         }
         self.kwds = {
             "if": self._if,

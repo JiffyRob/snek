@@ -78,6 +78,8 @@ def neq(*args):
 class Lexer:
     """Holds all lexing primitives and a function to use them"""
 
+    cache = {}
+
     # argument primitives
     comment = "#" + pp.rest_of_line
 
@@ -94,7 +96,7 @@ class Lexer:
         + pp.Opt(pp.DelimitedList(expression, allow_trailing_delim=True))
         + ")"
     )
-    control = pp.one_of("if switch case while count", as_keyword=True)
+    control = pp.one_of("if switch case while", as_keyword=True)
 
     # expressions
     assignment = varname + "="
@@ -102,10 +104,20 @@ class Lexer:
         pp.infix_notation(
             pp.Group(command) | literal,
             [
-                (pp.one_of("- !", as_keyword=True), 1, pp.opAssoc.RIGHT),
-                (pp.one_of("* / //", as_keyword=True), 2, pp.OpAssoc.LEFT),
-                (pp.one_of("+ -", as_keyword=True), 2, pp.OpAssoc.LEFT),
-                (pp.one_of("> >= < <= == !=", as_keyword=True), 2, pp.OpAssoc.LEFT),
+                # almost all the same operators as python, with the same precedences
+                # https://www.w3schools.com/python/python_operators.asp
+                ("**", 2, pp.opAssoc.LEFT),
+                (pp.one_of("+ - ~"), 1, pp.opAssoc.RIGHT),
+                (pp.one_of("* / // %"), 2, pp.OpAssoc.LEFT),
+                (pp.one_of("+ -"), 2, pp.OpAssoc.LEFT),
+                (pp.one_of("<< >>"), 2, pp.OpAssoc.LEFT),
+                ("&", 2, pp.OpAssoc.LEFT),
+                ("^", 2, pp.OpAssoc.LEFT),
+                ("|", 2, pp.OpAssoc.LEFT),
+                (pp.one_of("== != > >= < <= in"), 2, pp.OpAssoc.LEFT),
+                (pp.one_of("! not"), 1, pp.opAssoc.RIGHT),
+                ("and", 2, pp.opAssoc.LEFT),
+                ("or", 2, pp.opAssoc.LEFT),
             ],
         )
     )
@@ -118,13 +130,17 @@ class Lexer:
 
     @classmethod
     def tokenize(cls, string):
-        return cls.grammar.parse_string(string, parse_all=True)
+        if string in cls.cache:
+            return cls.cache[string]
+        result = cls.grammar.parse_string(string, parse_all=True)
+        cls.cache[string] = result
+        return result
 
     @classmethod
     def _test(cls):
         for test in (
             "a = 1; \nb = 2;",
-            "a = bool();",
+            "a = !bool(bool(1));",
             "-1 + 3 * -4;",
             "a = bool() + 1 - 3;",
             "b(a, 1 + -1);",
@@ -151,21 +167,13 @@ class SNEKProgram:
             "wait": Wait,
             "randint": snek_command(random.randint),
             "input": snek_command(input),
-            "not": snek_command(lambda arg: operator.not_(arg)),
             "bool": snek_command(lambda *args: bool(*args)),
-            "contains": snek_command(lambda seq, sub: operator.contains(seq, sub)),
             "abs": snek_command(abs),
             "sub": snek_command(lambda a, *args: a - sum(args)),
             "div": snek_command(lambda *args: functools.reduce(operator.truediv, args)),
             "fdiv": snek_command(
                 lambda *args: functools.reduce(operator.floordiv, args)
             ),
-            "inv": snek_command(operator.inv),
-            "lshift": snek_command(operator.lshift),
-            "rshift": snek_command(operator.rshift),
-            "xor": snek_command(operator.xor),
-            "and": snek_command(operator.and_),
-            "or": snek_command(operator.or_),
             "getitem": snek_command(lambda x, y: x[y]),
             "time": snek_command(time.time() * 1000),
         }
@@ -179,18 +187,30 @@ class SNEKProgram:
             self.namespace.update(start_variables)
 
         self.operators = {
-            "+": operator.add,
-            "-": lambda x, y=UNFINISHED: x - y if y != UNFINISHED else -x,
+            "**": pow,
+            "+": lambda x, y=None: x + y if y != None else +x,
+            "-": lambda x, y=None: x - y if y != None else -x,
+            "~": operator.invert,
             "*": operator.mul,
             "/": operator.truediv,
             "//": operator.floordiv,
+            "%": operator.mod,
+            "<<": operator.lshift,
+            ">>": operator.rshift,
+            "&": operator.and_,
+            "^": operator.xor,
+            "|": operator.or_,
+            "==": operator.eq,
+            "!=": operator.ne,
             ">": operator.gt,
             ">=": operator.ge,
             "<": operator.lt,
             "<=": operator.le,
-            "==": operator.eq,
-            "!=": operator.ne,
             "!": lambda x: not x,
+            "not": lambda x: not x,
+            # TODO: add short circuiting on logical operators
+            "and": lambda x, y: x and y,
+            "or": lambda x, y: x or y,
         }
         self.kwds = {
             "if": self._if,
@@ -390,8 +410,8 @@ class SNEKProgram:
 
 
 if __name__ == "__main__":
-    # print("TOKENIZER TEST")
-    # Lexer._test()
+    print("TOKENIZER TEST")
+    Lexer._test()
     # print("EVALUATOR TEST")
     # SNEKProgram._eval_test()
     print("PROGRAM TEST")

@@ -115,6 +115,7 @@ class Lexer:
                 ("^", 2, pp.OpAssoc.LEFT),
                 ("|", 2, pp.OpAssoc.LEFT),
                 (pp.one_of("== != > >= < <= in"), 2, pp.OpAssoc.LEFT),
+                ("not in", 2, pp.OpAssoc.LEFT),
                 (pp.one_of("! not"), 1, pp.opAssoc.RIGHT),
                 ("and", 2, pp.opAssoc.LEFT),
                 ("or", 2, pp.opAssoc.LEFT),
@@ -208,6 +209,8 @@ class SNEKProgram:
             "<=": operator.le,
             "!": lambda x: not x,
             "not": lambda x: not x,
+            "in": lambda x, y: x in y,
+            "not in": lambda x, y: x not in y,
             # TODO: add short circuiting on logical operators
             "and": lambda x, y: x and y,
             "or": lambda x, y: x or y,

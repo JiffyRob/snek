@@ -1,1 +1,1 @@
-from snek.snek import *
+from .snek import *

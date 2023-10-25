@@ -2,6 +2,7 @@ import functools
 import operator
 import random
 import time
+import logging
 
 import pyparsing as pp
 
@@ -9,6 +10,7 @@ UNFINISHED = "const unfinished"
 DONE = "const done"
 
 pp.ParserElement.enable_packrat()
+logger = logging.getLogger(__name__)
 
 
 class SnekCommand:
@@ -408,7 +410,7 @@ class SNEKProgram:
             )
 
     def print(self, *args):
-        print("SNEK says:", *args)
+        logger.info(f"SNEK says: {' '.join(repr(arg) for arg in args)}")
         yield 1
 
 

@@ -1,8 +1,8 @@
 import functools
+import logging
 import operator
 import random
 import time
-import logging
 
 import pyparsing as pp
 
